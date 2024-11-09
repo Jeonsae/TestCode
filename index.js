@@ -1,10 +1,10 @@
+require('dotenv').config();
 const express = require('express');
 const mysql = require('mysql');
 const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
-
 const app = express();
 const PORT = 3000;
 
@@ -142,7 +142,7 @@ app.post('/login', (req, res) => {
         }
 
         // JWT 생성
-        const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET_KEY, { expiresIn: '1h' });
+        const token = jwt.sign({ id: user.id }, 'yourSecretKey', { expiresIn: '1h' });
 
         console.log("JWT Token:", token);
 
@@ -153,4 +153,5 @@ app.post('/login', (req, res) => {
 // 서버 실행
 app.listen(PORT, () => {
     console.log(`서버가 ${PORT}번 포트에서 실행 중입니다.`);
+
 });
