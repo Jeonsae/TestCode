@@ -109,13 +109,40 @@ app.post('/verify-code', (req, res) => {
 
 // 회원가입 API
 app.post('/signup', async (req, res) => {
-    const { student_id, email, password, nickname } = req.body;
+    const {
+        userName,       // 사용자 이름
+        userEmail,      // 이메일
+        userNum,        // 학번
+        userPhone,      // 전화번호
+        college,        // 단과대학
+        userLesson,     // 전공
+        Field,          // 성별
+        userImg,        // 프로필 이미지 URL
+        userPW          // 비밀번호
+    } = req.body;
 
     try {
-        const hashedPassword = await hashPassword(password);
+        // 비밀번호 해싱
+        const hashedPassword = await hashPassword(userPW);
 
-        const query = 'INSERT INTO users (student_id, email, password, nickname) VALUES (?, ?, ?, ?)';
-        const values = [student_id, email, hashedPassword, nickname];
+        // 데이터베이스에 데이터 삽입
+        const query = `
+            INSERT INTO users (userName, userEmail, userNum, userPhone, college, userLesson, Field, userImg, userPW)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+        const values = [
+            userName,
+            userEmail,
+            userNum,
+            userPhone,
+            college,
+            userLesson,
+            Field,
+            userImg,
+            hashedPassword
+        ];
+
+        console.log('삽입할 데이터:', values); // 디버깅용
 
         db.query(query, values, (err, result) => {
             if (err) {
@@ -125,16 +152,19 @@ app.post('/signup', async (req, res) => {
             res.status(201).json({ message: '회원가입 성공' });
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: '비밀번호 해싱 실패' });
+        console.error('서버 오류: ', error);
+        res.status(500).json({ error: '서버 오류' });
     }
 });
+
+
+
 
 // 로그인 API
 app.post('/login', (req, res) => {
     const { email, password } = req.body;
 
-    db.query('SELECT * FROM users WHERE email = ?', [email], async (err, results) => {
+    db.query('SELECT * FROM users WHERE userEmail = ?', [email], async (err, results) => {
         if (err) {
             console.error(err);
             return res.status(500).json({ message: 'Server error' });
@@ -146,20 +176,48 @@ app.post('/login', (req, res) => {
         const user = results[0];
 
         // 해시된 비밀번호와 비교
-        const match = await comparePassword(password, user.password);
+        const match = await comparePassword(password, user.userPW);
 
         if (!match) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
 
         // JWT 생성
-        const token = jwt.sign({ id: user.id }, 'yourSecretKey', { expiresIn: '1h' });
+        const token = jwt.sign({ id: user.userEmail }, 'yourSecretKey', { expiresIn: '1h' });
 
         console.log("JWT Token:", token);
 
         res.json({ token });
     });
 });
+
+//비밀번호 찾기 과정
+app.post('/update-password', (req, res) => {
+    const { email, newPassword } = req.body;
+  
+    if (!email || !newPassword) {
+      return res.status(400).send({ message: '이메일과 새 비밀번호를 모두 제공해야 합니다.' });
+    }
+  
+    bcrypt.hash(newPassword, 10, (err, hashedPassword) => {
+      if (err) {
+        return res.status(500).send({ message: '비밀번호 암호화 실패' });
+      }
+  
+      const query = 'UPDATE users SET userPW = ? WHERE userEmail = ?';
+      db.query(query, [hashedPassword, email], (err, result) => {
+        if (err) {
+          return res.status(500).send({ message: '비밀번호 변경 실패' });
+        }
+  
+        if (result.affectedRows === 0) {
+          return res.status(404).send({ message: '이메일을 찾을 수 없습니다.' });
+        }
+  
+        return res.status(200).send({ message: '비밀번호가 성공적으로 변경되었습니다.' });
+      });
+    });
+  });
 
 // Socket.io 연결 설정
 io.on('connection', (socket) => {
