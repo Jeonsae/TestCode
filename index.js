@@ -6,6 +6,8 @@ const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 const bcrypt = require('bcrypt');
+const multer = require('multer');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -115,8 +117,7 @@ app.post('/signup', async (req, res) => {
         userNum,        // 학번
         userPhone,      // 전화번호
         college,        // 단과대학
-        userLesson,     // 전공
-        Field,          // 성별
+        userLesson,     // 전공        
         userImg,        // 프로필 이미지 URL
         userPW          // 비밀번호
     } = req.body;
@@ -127,8 +128,8 @@ app.post('/signup', async (req, res) => {
 
         // 데이터베이스에 데이터 삽입
         const query = `
-            INSERT INTO users (userName, userEmail, userNum, userPhone, college, userLesson, Field, userImg, userPW)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO users (userName, userEmail, userNum, userPhone, college, userLesson, userImg, userPW)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const values = [
             userName,
@@ -137,7 +138,6 @@ app.post('/signup', async (req, res) => {
             userPhone,
             college,
             userLesson,
-            Field,
             userImg,
             hashedPassword
         ];
@@ -219,6 +219,29 @@ app.post('/update-password', (req, res) => {
     });
   });
 
+  //클라이언트에게 회원 정보 반환
+  app.get('/user-info', (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+        return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, 'yourSecretKey');
+        const userEmail = decoded.id;
+
+        const query = 'SELECT userName, userNum, college, userLesson FROM users WHERE userEmail = ?';
+        db.query(query, [userEmail], (err, results) => {
+            if (err) return res.status(500).json({ message: 'Server error' });
+            if (results.length === 0) return res.status(404).json({ message: 'User not found' });
+
+            res.json(results[0]);
+        });
+    } catch (err) {
+        res.status(403).json({ message: 'Invalid token' });
+    }
+});
+
 // Socket.io 연결 설정
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
@@ -251,6 +274,47 @@ io.on('connection', (socket) => {
     });
 });
 
+// 이미지 업로드 디렉토리 및 파일명 설정
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/'); // 'uploads' 디렉토리에 저장
+    },
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + path.extname(file.originalname)); // 파일명: timestamp + 확장자
+    },
+});
+
+const upload = multer({ storage });
+
+// 프로필 이미지 업로드
+app.post('/update-avatar', upload.single('avatar'), (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+        return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, 'yourSecretKey');
+        const userEmail = decoded.id;
+
+        const imageUrl = `http://192.168.0.7:3000/uploads/${req.file.filename}`; // 업로드된 이미지 URL
+
+        // DB 업데이트
+        const query = 'UPDATE users SET userImg = ? WHERE userEmail = ?';
+        db.query(query, [imageUrl, userEmail], (err, result) => {
+            if (err) {
+                console.error('DB 업데이트 실패:', err);
+                return res.status(500).json({ message: 'DB 업데이트 실패' });
+            }
+            res.status(200).json({ message: '프로필 이미지가 업데이트되었습니다.', imageUrl });
+        });
+    } catch (err) {
+        res.status(403).json({ message: 'Invalid token' });
+    }
+});
+
+// 정적 파일 제공 (이미지 접근 가능하도록 설정)
+app.use('/uploads', express.static('uploads'));
 
 // 서버 시작
 server.listen(PORT, () => {
