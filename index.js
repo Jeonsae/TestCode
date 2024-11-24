@@ -8,6 +8,7 @@ const cors = require('cors');
 const bcrypt = require('bcrypt');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const server = http.createServer(app);
@@ -183,13 +184,14 @@ app.post('/login', (req, res) => {
         }
 
         // JWT 생성
-        const token = jwt.sign({ id: user.userEmail }, 'yourSecretKey', { expiresIn: '1h' });
+        const token = jwt.sign({ id: user.userEmail }, 'yourSecretKey');
 
         console.log("JWT Token:", token);
 
         res.json({ token });
     });
 });
+
 
 //비밀번호 찾기 과정
 app.post('/update-password', (req, res) => {
@@ -230,7 +232,7 @@ app.post('/update-password', (req, res) => {
         const decoded = jwt.verify(token, 'yourSecretKey');
         const userEmail = decoded.id;
 
-        const query = 'SELECT userName, userNum, college, userLesson FROM users WHERE userEmail = ?';
+        const query = 'SELECT userName, userNum, college, userLesson, userImg FROM users WHERE userEmail = ?';
         db.query(query, [userEmail], (err, results) => {
             if (err) return res.status(500).json({ message: 'Server error' });
             if (results.length === 0) return res.status(404).json({ message: 'User not found' });
@@ -297,21 +299,49 @@ app.post('/update-avatar', upload.single('avatar'), (req, res) => {
         const decoded = jwt.verify(token, 'yourSecretKey');
         const userEmail = decoded.id;
 
-        const imageUrl = `http://192.168.0.7:3000/uploads/${req.file.filename}`; // 업로드된 이미지 URL
-
-        // DB 업데이트
-        const query = 'UPDATE users SET userImg = ? WHERE userEmail = ?';
-        db.query(query, [imageUrl, userEmail], (err, result) => {
+        // 이전 이미지 URL 가져오기
+        const getOldImageQuery = 'SELECT userImg FROM users WHERE userEmail = ?';
+        db.query(getOldImageQuery, [userEmail], (err, results) => {
             if (err) {
-                console.error('DB 업데이트 실패:', err);
-                return res.status(500).json({ message: 'DB 업데이트 실패' });
+                console.error('DB 조회 실패:', err);
+                return res.status(500).json({ message: 'DB 조회 실패' });
             }
-            res.status(200).json({ message: '프로필 이미지가 업데이트되었습니다.', imageUrl });
+
+            const oldImageUrl = results[0]?.userImg;
+
+            // 새로운 이미지 URL 생성
+            const newImageUrl = `http://192.168.0.7:3000/uploads/${req.file.filename}`;
+
+            // DB 업데이트
+            const updateQuery = 'UPDATE users SET userImg = ? WHERE userEmail = ?';
+            db.query(updateQuery, [newImageUrl, userEmail], (err, updateResult) => {
+                if (err) {
+                    console.error('DB 업데이트 실패:', err);
+                    return res.status(500).json({ message: 'DB 업데이트 실패' });
+                }
+
+                // 이전 이미지 삭제 (로컬 파일 시스템에서 제거)
+                if (oldImageUrl) {
+                    const oldFilePath = oldImageUrl.replace('http://192.168.0.7:3000/', ''); // 파일 경로 추출
+                    fs.unlink(oldFilePath, (err) => {
+                        if (err) {
+                            console.error('이전 이미지 삭제 실패:', err);
+                        } else {
+                            console.log('이전 이미지 삭제 성공:', oldFilePath);
+                        }
+                    });
+                }
+
+                // 응답 반환
+                res.status(200).json({ message: '프로필 이미지가 업데이트되었습니다.', imageUrl: newImageUrl });
+            });
         });
     } catch (err) {
+        console.error('Token verification error:', err);
         res.status(403).json({ message: 'Invalid token' });
     }
 });
+
 
 // 정적 파일 제공 (이미지 접근 가능하도록 설정)
 app.use('/uploads', express.static('uploads'));
