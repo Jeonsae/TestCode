@@ -244,6 +244,45 @@ app.post('/update-password', (req, res) => {
     }
 });
 
+app.post('/update-user-info', (req, res) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+        return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, 'yourSecretKey');
+        const userEmail = decoded.id;
+
+        // 클라이언트에서 전송된 수정 정보 가져오기
+        const { college, userLesson } = req.body;
+
+        // 입력된 값에 대해 유효성 검사 추가 (예: college와 userLesson 값이 유효한지)
+        if (!college || !userLesson) {
+            return res.status(400).json({ message: 'Invalid data' });
+        }
+
+        // 데이터베이스에서 사용자 정보 업데이트
+        const query = 'UPDATE users SET college = ?, userLesson = ? WHERE userEmail = ?';
+        db.query(query, [college, userLesson, userEmail], (err, results) => {
+            if (err) {
+                return res.status(500).json({ message: 'Server error' });
+            }
+
+            if (results.affectedRows === 0) {
+                return res.status(404).json({ message: 'User not found' });
+            }
+
+            res.status(200).json({ message: 'User info updated successfully',
+                college : college,
+                userLesson : userLesson
+             });
+        });
+    } catch (err) {
+        res.status(403).json({ message: 'Invalid token' });
+    }
+});
+
 // Socket.io 연결 설정
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
